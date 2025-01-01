@@ -1,5 +1,6 @@
-[gd_scene load_steps=8 format=3 uid="uid://pl7p7r4vvb4o"]
+[gd_scene load_steps=9 format=3 uid="uid://pl7p7r4vvb4o"]
 
+[ext_resource type="Script" path="res://test.gd" id="1_maef2"]
 [ext_resource type="Script" path="res://effects/raytracer.gd" id="2_0a4qw"]
 [ext_resource type="Script" path="res://movement.gd" id="2_n45lj"]
 
@@ -16,7 +17,7 @@ sky = SubResource("Sky_ya5g2")
 tonemap_mode = 2
 glow_enabled = true
 
-[sub_resource type="CompositorEffect" id="CompositorEffect_eoi3j"]
+[sub_resource type="CompositorEffect" id="CompositorEffect_263f1"]
 resource_local_to_scene = false
 resource_name = ""
 enabled = true
@@ -26,9 +27,10 @@ needs_normal_roughness = false
 script = ExtResource("2_0a4qw")
 
 [sub_resource type="Compositor" id="Compositor_c7xnk"]
-compositor_effects = Array[CompositorEffect]([SubResource("CompositorEffect_eoi3j")])
+compositor_effects = Array[CompositorEffect]([SubResource("CompositorEffect_263f1")])
 
 [node name="Main" type="Node3D"]
+script = ExtResource("1_maef2")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_dbjj3")
@@ -43,3 +45,8 @@ script = ExtResource("2_n45lj")
 [node name="Neck" type="Node3D" parent="CharacterBody3D"]
 
 [node name="Camera3D" type="Camera3D" parent="CharacterBody3D/Neck"]
+
+[node name="Timer" type="Timer" parent="."]
+autostart = true
+
+[connection signal="timeout" from="Timer" to="." method="send_new_value"]

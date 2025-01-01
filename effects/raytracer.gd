@@ -4,8 +4,14 @@ class_name RayTracer extends CompositorEffect
 var rd : RenderingDevice
 var shader : RID
 var pipeline : RID
+var index : int = 0
+
+func receive_new_index(new_index : int) -> void:
+	index = new_index
+	print(index)
 
 func _init() -> void:
+	Globals.change_index.connect(receive_new_index)
 	RenderingServer.call_on_render_thread(initialize_compute_shader)
 
 func _notification(what: int) -> void:
@@ -28,7 +34,7 @@ func _render_callback(effect_callback_type: int, render_data: RenderData) -> voi
 	var push_constants : PackedFloat32Array = PackedFloat32Array()
 	push_constants.append(size.x)
 	push_constants.append(size.y)
-	push_constants.append(0)
+	push_constants.append(index)
 	push_constants.append(0)
 	
 	for view in scene_buffers.get_view_count():

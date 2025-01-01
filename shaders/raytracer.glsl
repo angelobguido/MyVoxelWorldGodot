@@ -13,6 +13,7 @@ layout(binding = 0, set = 1, std430) restrict buffer CameraData {
 
 layout(push_constant, std430) uniform Params {
     vec2 screen_size;
+    float time;
 } p;
 
 struct Sphere {
@@ -77,7 +78,7 @@ void main() {
     ray.direction = vec3(inv_view * vec4(normalize(vec3(target) / target.w), 0));
 
     Sphere sphere;
-    sphere.center = vec3(0.0, 0.0, -6.0);
+    sphere.center = vec3(0.0, p.time/10, -6.0);
     sphere.radius = 1.0;
     sphere.color = vec3(1.0, 0.75, 0.5);
 
