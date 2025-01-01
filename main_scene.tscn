@@ -1,0 +1,59 @@
+[gd_scene load_steps=12 format=3 uid="uid://pl7p7r4vvb4o"]
+
+[ext_resource type="Script" path="res://test.gd" id="1_h207c"]
+[ext_resource type="Script" path="res://raytracer.gd" id="2_0a4qw"]
+[ext_resource type="Script" path="res://movement.gd" id="2_n45lj"]
+[ext_resource type="Script" path="res://inverse_effect.gd" id="2_utysj"]
+[ext_resource type="Script" path="res://camera_3d.gd" id="4_04ivk"]
+
+[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_y32vu"]
+sky_horizon_color = Color(0.64625, 0.65575, 0.67075, 1)
+ground_horizon_color = Color(0.64625, 0.65575, 0.67075, 1)
+
+[sub_resource type="Sky" id="Sky_ya5g2"]
+sky_material = SubResource("ProceduralSkyMaterial_y32vu")
+
+[sub_resource type="Environment" id="Environment_dbjj3"]
+background_mode = 2
+sky = SubResource("Sky_ya5g2")
+tonemap_mode = 2
+glow_enabled = true
+
+[sub_resource type="CompositorEffect" id="CompositorEffect_hx0ok"]
+resource_local_to_scene = false
+resource_name = ""
+enabled = true
+effect_callback_type = 4
+needs_motion_vectors = false
+needs_normal_roughness = false
+script = ExtResource("2_0a4qw")
+
+[sub_resource type="CompositorEffect" id="CompositorEffect_mntqq"]
+resource_local_to_scene = false
+resource_name = ""
+enabled = true
+effect_callback_type = 4
+needs_motion_vectors = false
+needs_normal_roughness = false
+script = ExtResource("2_utysj")
+
+[sub_resource type="Compositor" id="Compositor_c7xnk"]
+compositor_effects = Array[CompositorEffect]([SubResource("CompositorEffect_hx0ok"), SubResource("CompositorEffect_mntqq")])
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_h207c")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_dbjj3")
+compositor = SubResource("Compositor_c7xnk")
+
+[node name="CSGBox3D" type="CSGBox3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.307047, -0.791089, -1.89575)
+
+[node name="CharacterBody3D" type="CharacterBody3D" parent="."]
+script = ExtResource("2_n45lj")
+
+[node name="Neck" type="Node3D" parent="CharacterBody3D"]
+
+[node name="Camera3D" type="Camera3D" parent="CharacterBody3D/Neck"]
+script = ExtResource("4_04ivk")
