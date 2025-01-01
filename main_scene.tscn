@@ -1,6 +1,6 @@
 [gd_scene load_steps=8 format=3 uid="uid://pl7p7r4vvb4o"]
 
-[ext_resource type="Script" path="res://raytracer.gd" id="2_0a4qw"]
+[ext_resource type="Script" path="res://effects/raytracer.gd" id="2_0a4qw"]
 [ext_resource type="Script" path="res://movement.gd" id="2_n45lj"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_y32vu"]
@@ -16,7 +16,7 @@ sky = SubResource("Sky_ya5g2")
 tonemap_mode = 2
 glow_enabled = true
 
-[sub_resource type="CompositorEffect" id="CompositorEffect_hx0ok"]
+[sub_resource type="CompositorEffect" id="CompositorEffect_eoi3j"]
 resource_local_to_scene = false
 resource_name = ""
 enabled = true
@@ -26,7 +26,7 @@ needs_normal_roughness = false
 script = ExtResource("2_0a4qw")
 
 [sub_resource type="Compositor" id="Compositor_c7xnk"]
-compositor_effects = Array[CompositorEffect]([SubResource("CompositorEffect_hx0ok")])
+compositor_effects = Array[CompositorEffect]([SubResource("CompositorEffect_eoi3j")])
 
 [node name="Main" type="Node3D"]
 
