@@ -1,43 +1,24 @@
-[gd_scene load_steps=9 format=3 uid="uid://pl7p7r4vvb4o"]
+[gd_scene load_steps=5 format=3 uid="uid://pl7p7r4vvb4o"]
 
-[ext_resource type="Script" path="res://test.gd" id="1_maef2"]
-[ext_resource type="Script" path="res://effects/raytracer.gd" id="2_0a4qw"]
+[ext_resource type="Script" path="res://effects/raytracer.gd" id="1_r8ca8"]
 [ext_resource type="Script" path="res://movement.gd" id="2_n45lj"]
 
-[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_y32vu"]
-sky_horizon_color = Color(0.64625, 0.65575, 0.67075, 1)
-ground_horizon_color = Color(0.64625, 0.65575, 0.67075, 1)
-
-[sub_resource type="Sky" id="Sky_ya5g2"]
-sky_material = SubResource("ProceduralSkyMaterial_y32vu")
-
-[sub_resource type="Environment" id="Environment_dbjj3"]
-background_mode = 2
-sky = SubResource("Sky_ya5g2")
-tonemap_mode = 2
-glow_enabled = true
-
-[sub_resource type="CompositorEffect" id="CompositorEffect_263f1"]
+[sub_resource type="CompositorEffect" id="CompositorEffect_trca1"]
 resource_local_to_scene = false
 resource_name = ""
 enabled = true
 effect_callback_type = 4
 needs_motion_vectors = false
 needs_normal_roughness = false
-script = ExtResource("2_0a4qw")
+script = ExtResource("1_r8ca8")
 
-[sub_resource type="Compositor" id="Compositor_c7xnk"]
-compositor_effects = Array[CompositorEffect]([SubResource("CompositorEffect_263f1")])
+[sub_resource type="Compositor" id="Compositor_bewhs"]
+compositor_effects = Array[CompositorEffect]([SubResource("CompositorEffect_trca1")])
 
 [node name="Main" type="Node3D"]
-script = ExtResource("1_maef2")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
-environment = SubResource("Environment_dbjj3")
-compositor = SubResource("Compositor_c7xnk")
-
-[node name="CSGBox3D" type="CSGBox3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -0.307047, -0.791089, -1.89575)
+compositor = SubResource("Compositor_bewhs")
 
 [node name="CharacterBody3D" type="CharacterBody3D" parent="."]
 script = ExtResource("2_n45lj")
