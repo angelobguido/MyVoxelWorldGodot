@@ -2,9 +2,11 @@
 #version 450
 
 #define SEED 10
-
+#define LIMIT 200
 #define CHUNK_SIZE 10000
 #define ACCESS(x, y, z) (x + y * CHUNK_SIZE + z * CHUNK_SIZE * CHUNK_SIZE)
+#define EPSILON 1e-4
+#define ACCUMULATIONS 1
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
@@ -66,6 +68,8 @@ const ivec3 gridSize = ivec3(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SIZE);
 const int bounces = 10;
 const vec3 backgroundColor = vec3(0.6, 0.7, 0.9);
 const float M_PI = 3.14159265358979323846;
+
+int ray_remaining_distance = LIMIT;
 
 uint PCGHash(uint seed)
 {
@@ -158,10 +162,9 @@ HitPayload traceRay(Ray ray) {
     vec3 tMax = (vec3(voxelPosition + stepInGrid*0.5 + 0.5) - ray.origin) * invDir;
     vec3 tDelta = abs(invDir);
 
-    int i = 0;
-
-    while (i<10000) {
-        i++;
+    
+    while (ray_remaining_distance>0) {
+        ray_remaining_distance--;
 
         // Check if the current voxel is out of the grid bounds
         if (voxelPosition.x < 0 || voxelPosition.x >= gridSize.x ||
@@ -225,12 +228,18 @@ float randFloat(inout uint seed){
     return float(seed)/float(0xFFFFFFFF);
 }
 
-vec3 randVec3(inout uint seed){
+vec3 randSphere(inout uint seed){
     return normalize(vec3(
         2*(randFloat(seed) - 0.5),
         2*(randFloat(seed) - 0.5),
         2*(randFloat(seed) - 0.5)
     ));
+
+}
+
+vec3 randHemisphere(inout uint seed, vec3 normal){
+    vec3 v = randSphere(seed);
+    return v * sign(dot(v, normal));
 }
 
 void main() {
@@ -261,32 +270,61 @@ void main() {
     HitPayload hitPayload;
     Material material;
 
-    vec3 light = vec3(0);
-    vec3 contribution = vec3(1);
+    vec3 accumulatedLight = vec3(0);
+    int numberOfAccumulationsPerRaytrace = ACCUMULATIONS;
 
-    for (int j = 0; j < bounces; j++){
-        seed += j;
-        hitPayload = traceRay(ray);
+    for(int i = 0; i < numberOfAccumulationsPerRaytrace; i++){
+        seed += i;
+        vec3 light = vec3(0);
+        vec3 contribution = vec3(1);
+        vec3 normal;
+        ray.origin = cameraPosition;
+        ray.direction = cameraRayDirection;
+        for (int j = 0; j < bounces; j++) {
+        //for (int j = 0; j < 1; j++) {
+            seed += j;
+            //Russian Roulette stop the ray by chance if the contribution is too low
+            float r = randFloat(seed);
+            if (r > length(contribution) / length(vec3(1)) * 2){
+                break;
+            }
+            hitPayload = traceRay(ray);
 
-        if (hitPayload.hitDistance < 0) {
-            light += backgroundColor * contribution;
-            break;
+            if (hitPayload.hitDistance < 0) {
+                light += backgroundColor * contribution;
+                break;
+            }
+
+            material = materials[hitPayload.materialIndex];
+            vec3 perfectReflection = reflect(ray.direction, hitPayload.normal); //Get the perfect reflection direction for future calculations on indirect light
+            normal = hitPayload.normal;
+
+            //Translate ray contact with object to avoid imprecisions
+            ray.origin = hitPayload.position + hitPayload.normal * 0.001;
+
+            //Get pixel color based on the material contribuition
+            contribution *= material.albedo;
+            light += material.emissionColor*material.emissionPower*contribution;//*max(0, dot(normalize(-ray.direction), normal));
+
+            if(material.emissionPower > 1)
+                    break; //Break if it is an emissive object (it doesn't matter)
+
+            //Direct light calculations
+            //light += calculateDirectLight(ray.origin, normal, contribution);
+            //light += contribution*ambientLightPower;
+
+            //Indirect light continue
+            //Change the ray direction to a random direction following the surface diffuse properties
+            ray.direction = normalize(randHemisphere(seed, normal) + perfectReflection*(1/(material.roughness+EPSILON)-1));
+
         }
 
-        material = materials[hitPayload.materialIndex];
-
-        contribution *= material.albedo;
-        light += material.emissionColor*material.emissionPower;
-
-        if(j == bounces - 1){
-            light += backgroundColor * contribution;
-            break;
-        }
-
-        ray.origin = hitPayload.position + hitPayload.normal * 0.0001;
-        ray.direction = reflect(ray.direction, hitPayload.normal + material.roughness*randVec3(seed)/5.0);
+        // Ambient light
+        accumulatedLight += clamp(light, 0, 1);
+        ray_remaining_distance = LIMIT;
     }
 
-    imageStore(screen_tex, pixelPos, vec4(light, 1.0));
+
+    imageStore(screen_tex, pixelPos, vec4(accumulatedLight/float(numberOfAccumulationsPerRaytrace), 1.0));
 
 }
