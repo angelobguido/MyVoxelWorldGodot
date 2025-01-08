@@ -1,10 +1,9 @@
 #[compute]
 #version 450
 
-#define SEED 10
+#define GLOBAL_SEED 10
 #define LIMIT 200
-#define CHUNK_SIZE 10000
-#define ACCESS(x, y, z) (x + y * CHUNK_SIZE + z * CHUNK_SIZE * CHUNK_SIZE)
+#define WORLD_SIZE 10000
 #define EPSILON 1e-4
 #define ACCUMULATIONS 1
 
@@ -13,14 +12,14 @@ layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 layout(rgba16f, binding = 0, set = 0) uniform image2D screen_tex;
 
 layout(binding = 0, set = 1, std430) restrict buffer CameraData {
-	vec3 camera_position;
+	vec3 position;
     mat4 inv_proj;
     mat4 inv_view;
 } camera_data;
 
 layout(push_constant, std430) uniform Params {
     vec2 screen_size;
-} p;
+} params;
 
 struct Sphere {
     vec3 center;
@@ -35,39 +34,35 @@ struct Ray {
 };
 
 struct HitPayload {
-    float hitDistance;
+    float hit_distance;
     vec3 position;
     vec3 normal;
-    int materialIndex;
+    int material_index;
 };
 
 struct Material {
     vec3 albedo;
     float roughness;
     float metallic;
-    vec3 emissionColor;
-    float emissionPower;
+    vec3 emission_color;
+    float emission_power;
 };
 
 const Material[] materials = {
     Material(vec3(0,0,0), 0, 0, vec3(1), 0),
     Material(vec3(0.7,0.4,0), 1, 0, vec3(1,0,0), 0),
-    Material(vec3(0,0.7,0.1), 1, 0, vec3(0,1,0), 0),
-    Material(vec3(0,0.2,0.7), 1, 0, vec3(0,0,1), 0),
+    Material(vec3(0,0.7,0.1), 0.7, 0, vec3(0,1,0), 0),
+    Material(vec3(0.5,0.5,0.5), 0, 0, vec3(1,1,1), 10),
+    Material(vec3(0.7,0.7,0.9), 0.3, 0, vec3(1,1,1), 0)
 };
 
-// const mat4 inv_view = mat4(vec4(1, 0, 0, 0),
-//                            vec4(0, 1, 0, 0),
-//                            vec4(0, 0, 1, 0),
-//                            vec4(0, 0, 0, 1));
+const vec3 sun_direction = normalize(vec3(0, -1, 0));
+const vec3 sun_emission_color = vec3(1.0, 1.0, 0.9);
+const float sun_emission_power = 1.0;
 
-const vec3 sun_direction = normalize(vec3(0, 0, -1.0));
-
-const ivec3 gridSize = ivec3(CHUNK_SIZE, CHUNK_SIZE, CHUNK_SIZE);
-
+const ivec3 grid_size = ivec3(WORLD_SIZE, WORLD_SIZE, WORLD_SIZE);
 const int bounces = 10;
-const vec3 backgroundColor = vec3(0.6, 0.7, 0.9);
-const float M_PI = 3.14159265358979323846;
+const vec3 background_color = vec3(0.6, 0.7, 0.9);
 
 int ray_remaining_distance = LIMIT;
 
@@ -85,25 +80,25 @@ int accessWorldRandom(int x, int y, int z){
 
     int unified_value = x + y * 1000 + z * 1000000;
 
-    return int(PCGHash(unified_value + SEED))%3;
+    return int(PCGHash(unified_value + GLOBAL_SEED))%2;
 }
 
 // Utility function to calculate intersection with grid boundaries
-bool intersectGridBounds(Ray ray, out ivec3 voxelPosition, out float tEntry, out vec3 normal) {
+bool intersectGridBounds(Ray ray, out ivec3 voxel_position, out float t_entry, out vec3 normal) {
 
     vec3 step = sign(ray.direction);
 
-    vec3 tMin = (vec3(0.0) - ray.origin) / ray.direction;
-    vec3 tMax = (vec3(gridSize) - ray.origin) / ray.direction;
+    vec3 t_min = (vec3(0.0) - ray.origin) / ray.direction;
+    vec3 t_max = (vec3(grid_size) - ray.origin) / ray.direction;
 
-    vec3 t1 = min(tMin, tMax);
-    vec3 t2 = max(tMin, tMax);
+    vec3 t1 = min(t_min, t_max);
+    vec3 t2 = max(t_min, t_max);
 
-    tEntry = max(max(t1.x, t1.y), t1.z);
+    t_entry = max(max(t1.x, t1.y), t1.z);
 
-    if(tEntry == t1.x){
+    if(t_entry == t1.x){
         normal = vec3(-step.x, 0, 0);
-    } else if(tEntry == t1.y){
+    } else if(t_entry == t1.y){
         normal = vec3(0, -step.y, 0);
     } else{
         normal = vec3(0, 0, -step.z);
@@ -111,31 +106,30 @@ bool intersectGridBounds(Ray ray, out ivec3 voxelPosition, out float tEntry, out
 
     float tExit = min(min(t2.x, t2.y), t2.z);
 
-    if (tEntry > tExit) {
+    if (t_entry > tExit) {
         return false; // No intersection with grid
     }
 
-    if (tEntry < 0){
+    if (t_entry < 0){
         return false;
     }
 
-    vec3 intersectionPoint = ray.origin + ray.direction * tEntry;
+    vec3 intersectionPoint = ray.origin + ray.direction * t_entry;
 
-    const float epsilon = 1e-4;
-    intersectionPoint += epsilon * normalize(ray.direction);
+    intersectionPoint += EPSILON * normalize(ray.direction);
 
-    voxelPosition = ivec3(floor(intersectionPoint));
+    voxel_position = ivec3(floor(intersectionPoint));
 
     return true;
 }
 
 HitPayload traceRay(Ray ray) {
-    HitPayload hitPayload;
-    hitPayload.hitDistance = 0.0;
-    hitPayload.normal = vec3(0.0);
-    hitPayload.materialIndex = 0;
+    HitPayload payload;
+    payload.hit_distance = 0.0;
+    payload.normal = vec3(0.0);
+    payload.material_index = 0;
 
-    ivec3 voxelPosition;
+    ivec3 voxel_position;
     float t = 0;
     vec3 normal = vec3(0);
 
@@ -143,84 +137,84 @@ HitPayload traceRay(Ray ray) {
     ivec3 stepInGrid = ivec3(sign(ray.direction));
 
     // If the ray starts inside the grid, use the original ray origin
-    if (!(ray.origin.x < 0.0 || ray.origin.x >= float(gridSize.x) ||
-    ray.origin.y < 0.0 || ray.origin.y >= float(gridSize.y) ||
-    ray.origin.z < 0.0 || ray.origin.z >= float(gridSize.z))) {
-        voxelPosition = ivec3(floor(ray.origin));
+    if (!(ray.origin.x < 0.0 || ray.origin.x >= float(grid_size.x) ||
+    ray.origin.y < 0.0 || ray.origin.y >= float(grid_size.y) ||
+    ray.origin.z < 0.0 || ray.origin.z >= float(grid_size.z))) {
+        voxel_position = ivec3(floor(ray.origin));
     }
 
     // If it is outside check if it will intersect the grid or not
     else{
-        if (!intersectGridBounds(ray, voxelPosition, t, normal)){
-            hitPayload.hitDistance = -1;
-            return hitPayload;
+        if (!intersectGridBounds(ray, voxel_position, t, normal)){
+            payload.hit_distance = -1;
+            return payload;
         }
 
     }
 
-    // Calculate tMax and tDelta
-    vec3 tMax = (vec3(voxelPosition + stepInGrid*0.5 + 0.5) - ray.origin) * invDir;
-    vec3 tDelta = abs(invDir);
+    // Calculate t_max and t_delta
+    vec3 t_max = (vec3(voxel_position + stepInGrid*0.5 + 0.5) - ray.origin) * invDir;
+    vec3 t_delta = abs(invDir);
 
     
     while (ray_remaining_distance>0) {
         ray_remaining_distance--;
 
         // Check if the current voxel is out of the grid bounds
-        if (voxelPosition.x < 0 || voxelPosition.x >= gridSize.x ||
-        voxelPosition.y < 0 || voxelPosition.y >= gridSize.y ||
-        voxelPosition.z < 0 || voxelPosition.z >= gridSize.z) {
-            hitPayload.hitDistance = -1;
-            return hitPayload;
+        if (voxel_position.x < 0 || voxel_position.x >= grid_size.x ||
+        voxel_position.y < 0 || voxel_position.y >= grid_size.y ||
+        voxel_position.z < 0 || voxel_position.z >= grid_size.z) {
+            payload.hit_distance = -1;
+            return payload;
         }
 
         // Check if the current voxel is a block
-        // if (world[voxelPosition.x + voxelPosition.z * gridSize.x + voxelPosition.y * gridSize.x * gridSize.z] != 0) {
-        //     hitPayload.materialIndex = world[voxelPosition.x + voxelPosition.z * gridSize.x + voxelPosition.y * gridSize.x * gridSize.z];
-        //     hitPayload.hitDistance = t;
-        //     hitPayload.normal = normal;
-        //     hitPayload.position = ray.direction * t + ray.origin;
-        //     return hitPayload; // Hit
+        // if (world[voxel_position.x + voxel_position.z * grid_size.x + voxel_position.y * grid_size.x * grid_size.z] != 0) {
+        //     payload.material_index = world[voxel_position.x + voxel_position.z * grid_size.x + voxel_position.y * grid_size.x * grid_size.z];
+        //     payload.hit_distance = t;
+        //     payload.normal = normal;
+        //     payload.position = ray.direction * t + ray.origin;
+        //     return payload; // Hit
         // }
-        if (accessWorldRandom(voxelPosition.x, voxelPosition.y, voxelPosition.z) != 0) {
-            hitPayload.materialIndex = accessWorldRandom(voxelPosition.x, voxelPosition.y, voxelPosition.z);
-            hitPayload.hitDistance = t;
-            hitPayload.normal = normal;
-            hitPayload.position = ray.direction * t + ray.origin;
-            return hitPayload; // Hit
+        if (accessWorldRandom(voxel_position.x, voxel_position.y, voxel_position.z) != 0) {
+            payload.material_index = accessWorldRandom(voxel_position.x, voxel_position.y, voxel_position.z);
+            payload.hit_distance = t;
+            payload.normal = normal;
+            payload.position = ray.direction * t + ray.origin;
+            return payload; // Hit
         }
 
         // Traverse the grid
-        if (tMax.x < tMax.y) {
-            if (tMax.x < tMax.z) {
-                voxelPosition.x += stepInGrid.x;
-                t = tMax.x;
+        if (t_max.x < t_max.y) {
+            if (t_max.x < t_max.z) {
+                voxel_position.x += stepInGrid.x;
+                t = t_max.x;
                 normal = vec3(-stepInGrid.x, 0, 0);
-                tMax.x += tDelta.x;
+                t_max.x += t_delta.x;
             } else {
-                voxelPosition.z += stepInGrid.z;
-                t = tMax.z;
+                voxel_position.z += stepInGrid.z;
+                t = t_max.z;
                 normal = vec3(0, 0, -stepInGrid.z);
-                tMax.z += tDelta.z;
+                t_max.z += t_delta.z;
             }
         } else {
-            if (tMax.y < tMax.z) {
-                voxelPosition.y += stepInGrid.y;
-                t = tMax.y;
+            if (t_max.y < t_max.z) {
+                voxel_position.y += stepInGrid.y;
+                t = t_max.y;
                 normal = vec3(0, -stepInGrid.y, 0);
-                tMax.y += tDelta.y;
+                t_max.y += t_delta.y;
             } else {
-                voxelPosition.z += stepInGrid.z;
-                t = tMax.z;
+                voxel_position.z += stepInGrid.z;
+                t = t_max.z;
                 normal = vec3(0, 0, -stepInGrid.z);
-                tMax.z += tDelta.z;
+                t_max.z += t_delta.z;
             }
         }
 
     }
 
-    hitPayload.hitDistance = -1;
-    return hitPayload;
+    payload.hit_distance = -1;
+    return payload;
 }
 
 float randFloat(inout uint seed){
@@ -242,14 +236,56 @@ vec3 randHemisphere(inout uint seed, vec3 normal){
     return v * sign(dot(v, normal));
 }
 
+vec3 getDirectionLight(vec3 light_direction, vec3 emission, vec3 normal, vec3 contribution){
+
+    light_direction = normalize(light_direction);
+    
+    float diff = max(dot(normal, -light_direction), 0);
+
+    vec3 diffuse = emission * diff;
+
+    return diffuse*contribution;
+}
+
+bool isSkyVisible(vec3 surface_position, vec3 direction){
+
+    Ray ray;
+    ray.origin = surface_position;
+    ray.direction = direction;
+
+    HitPayload payload = traceRay(ray);
+
+    return (payload.hit_distance < 0);
+
+}
+
+vec3 calculateDirectLight(vec3 surface_position, vec3 normal, vec3 contribution){
+    vec3 light = vec3(0);
+    vec3 pre_light; // Used to test if the light is strong enough to worth sending rays
+    float threshold = EPSILON;
+
+    // Sun light
+    pre_light = getDirectionLight(sun_direction, sun_emission_color*sun_emission_power, normal, contribution);
+    if (length(pre_light) > threshold){
+        int last_remaining_distance = ray_remaining_distance;
+        ray_remaining_distance = LIMIT;
+        if(isSkyVisible(surface_position, -sun_direction)){
+            light += pre_light;
+        }
+        ray_remaining_distance = last_remaining_distance;
+    }
+
+    return light;
+}
+
 void main() {
 
-    vec3 cameraPosition = camera_data.camera_position;
+    vec3 camera_position = camera_data.position;
     mat4 inverseViewMatrix = camera_data.inv_view;
     mat4 inverseProjectionMatrix = camera_data.inv_proj;
 
     ivec2 pixelPos = ivec2(gl_GlobalInvocationID.xy);
-    vec2 screen_size = p.screen_size;
+    vec2 screen_size = params.screen_size;
     if (pixelPos.x >= screen_size.x || pixelPos.y >= screen_size.y) {
         return;
     }
@@ -263,55 +299,57 @@ void main() {
     coord = coord * 2 - 1;
 
     vec4 target = inverseProjectionMatrix * vec4(coord.x, coord.y, 1, 1);
-    vec3 cameraRayDirection = normalize(vec3(inverseViewMatrix * vec4(normalize(vec3(target) / target.w), 0)));
+    vec3 camera_ray_direction = normalize(vec3(inverseViewMatrix * vec4(normalize(vec3(target) / target.w), 0)));
 
-    ray.origin = cameraPosition;
-    ray.direction = cameraRayDirection;
-    HitPayload hitPayload;
+    ray.origin = camera_position;
+    ray.direction = camera_ray_direction;
+    HitPayload payload;
     Material material;
 
-    vec3 accumulatedLight = vec3(0);
-    int numberOfAccumulationsPerRaytrace = ACCUMULATIONS;
+    vec3 accumulated_light = vec3(0);
+    int accumulations_per_trace = ACCUMULATIONS;
 
-    for(int i = 0; i < numberOfAccumulationsPerRaytrace; i++){
+    for(int i = 0; i < accumulations_per_trace; i++){
+
         seed += i;
         vec3 light = vec3(0);
         vec3 contribution = vec3(1);
         vec3 normal;
-        ray.origin = cameraPosition;
-        ray.direction = cameraRayDirection;
+
+        ray.origin = camera_position;
+        ray.direction = camera_ray_direction;
+
         for (int j = 0; j < bounces; j++) {
-        //for (int j = 0; j < 1; j++) {
             seed += j;
+
             //Russian Roulette stop the ray by chance if the contribution is too low
             float r = randFloat(seed);
             if (r > length(contribution) / length(vec3(1)) * 2){
                 break;
             }
-            hitPayload = traceRay(ray);
+            payload = traceRay(ray);
 
-            if (hitPayload.hitDistance < 0) {
-                light += backgroundColor * contribution;
+            if (payload.hit_distance < 0) {
+                light += background_color * contribution;
                 break;
             }
 
-            material = materials[hitPayload.materialIndex];
-            vec3 perfectReflection = reflect(ray.direction, hitPayload.normal); //Get the perfect reflection direction for future calculations on indirect light
-            normal = hitPayload.normal;
+            material = materials[payload.material_index];
+            vec3 perfectReflection = reflect(ray.direction, payload.normal); //Get the perfect reflection direction for future calculations on indirect light
+            normal = payload.normal;
 
             //Translate ray contact with object to avoid imprecisions
-            ray.origin = hitPayload.position + hitPayload.normal * 0.001;
+            ray.origin = payload.position + payload.normal * EPSILON;
 
             //Get pixel color based on the material contribuition
             contribution *= material.albedo;
-            light += material.emissionColor*material.emissionPower*contribution;//*max(0, dot(normalize(-ray.direction), normal));
+            light += material.emission_color*material.emission_power*contribution;
 
-            if(material.emissionPower > 1)
+            if(material.emission_power > 1)
                     break; //Break if it is an emissive object (it doesn't matter)
 
-            //Direct light calculations
+            //Direct light calculation
             //light += calculateDirectLight(ray.origin, normal, contribution);
-            //light += contribution*ambientLightPower;
 
             //Indirect light continue
             //Change the ray direction to a random direction following the surface diffuse properties
@@ -320,11 +358,11 @@ void main() {
         }
 
         // Ambient light
-        accumulatedLight += clamp(light, 0, 1);
+        accumulated_light += clamp(light, 0, 1);
         ray_remaining_distance = LIMIT;
     }
 
 
-    imageStore(screen_tex, pixelPos, vec4(accumulatedLight/float(numberOfAccumulationsPerRaytrace), 1.0));
+    imageStore(screen_tex, pixelPos, vec4(accumulated_light/float(accumulations_per_trace), 1.0));
 
 }
