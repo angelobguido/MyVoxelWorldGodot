@@ -3,13 +3,14 @@
 
 #define GLOBAL_SEED 10
 #define LIMIT 200
-#define WORLD_SIZE 10000
+#define WORLD_SIZE 500
 #define EPSILON 1e-4
 #define ACCUMULATIONS 1
 
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 layout(rgba16f, binding = 0, set = 0) uniform image2D screen_tex;
+layout(binding = 0, set = 2) uniform sampler2D noise_tex;
 
 layout(binding = 0, set = 1, std430) restrict buffer CameraData {
 	vec3 position;
@@ -60,7 +61,7 @@ const vec3 sun_direction = normalize(vec3(0, -1, 0));
 const vec3 sun_emission_color = vec3(1.0, 1.0, 0.9);
 const float sun_emission_power = 1.0;
 
-const ivec3 grid_size = ivec3(WORLD_SIZE, WORLD_SIZE, WORLD_SIZE);
+const ivec3 grid_size = ivec3(WORLD_SIZE, 100, WORLD_SIZE);
 const int bounces = 10;
 const vec3 background_color = vec3(0.6, 0.7, 0.9);
 
@@ -75,12 +76,16 @@ uint PCGHash(uint seed)
 
 int accessWorldRandom(int x, int y, int z){
 
-    if(y > 16)
+    vec2 uv = vec2(x, z) / vec2(grid_size.x, grid_size.z);
+
+    float noise = texture(noise_tex, uv).r;
+
+    if(y > int(noise * grid_size.y))
         return 0;
 
     int unified_value = x + y * 1000 + z * 1000000;
 
-    return int(PCGHash(unified_value + GLOBAL_SEED))%2;
+    return int(PCGHash(unified_value + GLOBAL_SEED))%5;
 }
 
 // Utility function to calculate intersection with grid boundaries
@@ -364,5 +369,22 @@ void main() {
 
 
     imageStore(screen_tex, pixelPos, vec4(accumulated_light/float(accumulations_per_trace), 1.0));
+
+    // ivec2 pixelPos = ivec2(gl_GlobalInvocationID.xy);
+    // vec2 screen_size = params.screen_size;
+    // if (pixelPos.x >= screen_size.x || pixelPos.y >= screen_size.y) {
+    //     return;
+    // }
+
+    // vec2 uv = vec2(pixelPos) / screen_size;
+
+    // float noise = texture(noise_tex, uv).r;
+
+    // if(noise < 0.6){
+    //     imageStore(screen_tex, pixelPos, vec4(0, 0, 0, 1.0));
+    //     return;
+    // }
+
+    // imageStore(screen_tex, pixelPos, vec4(noise, noise, noise, 1.0));
 
 }

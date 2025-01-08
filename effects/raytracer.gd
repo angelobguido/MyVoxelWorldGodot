@@ -4,13 +4,18 @@ class_name RayTracer extends CompositorEffect
 var rd : RenderingDevice
 var shader : RID
 var pipeline : RID
+var noise_tex : RID
+var noise_image : Image
 
 func _init() -> void:
+	noise_image = load("res://noiseTexture.png")
+	noise_image.convert(Image.FORMAT_R8)
 	RenderingServer.call_on_render_thread(initialize_compute_shader)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_PREDELETE and shader.is_valid():
 		RenderingServer.free_rid(shader)
+		RenderingServer.free_rid(noise_tex)
 		
 func _render_callback(effect_callback_type: int, render_data: RenderData) -> void:
 	if not rd: return
@@ -62,10 +67,25 @@ func _render_callback(effect_callback_type: int, render_data: RenderData) -> voi
 		
 		var camera_uniform_set : RID = UniformSetCacheRD.get_cache(shader, 1, [uniform])
 		
+		var sampler_state : RDSamplerState = RDSamplerState.new()
+		sampler_state.mag_filter = RenderingDevice.SAMPLER_FILTER_LINEAR
+		sampler_state.min_filter = RenderingDevice.SAMPLER_FILTER_LINEAR
+		
+		var noise_sampler : RID = rd.sampler_create(sampler_state)
+
+		uniform = RDUniform.new()
+		uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE
+		uniform.binding = 0
+		uniform.add_id(noise_sampler)
+		uniform.add_id(noise_tex)
+
+		var noise_tex_uniform_set : RID = UniformSetCacheRD.get_cache(shader, 2, [uniform])
+		
 		var compute_list : int = rd.compute_list_begin()
 		rd.compute_list_bind_compute_pipeline(compute_list, pipeline)
 		rd.compute_list_bind_uniform_set(compute_list, image_uniform_set, 0)
 		rd.compute_list_bind_uniform_set(compute_list, camera_uniform_set, 1)
+		rd.compute_list_bind_uniform_set(compute_list, noise_tex_uniform_set, 2)    
 		rd.compute_list_set_push_constant(compute_list, push_constants.to_byte_array(), push_constants.size() * 4)
 		rd.compute_list_dispatch(compute_list, x_groups, y_groups, 1)
 		rd.compute_list_end()
@@ -79,6 +99,14 @@ func initialize_compute_shader() -> void:
 	var glsl_file : RDShaderFile = load("res://shaders/raytracer.glsl")
 	shader = rd.shader_create_from_spirv(glsl_file.get_spirv())
 	pipeline = rd.compute_pipeline_create(shader)
+	
+	var texture_format : RDTextureFormat = RDTextureFormat.new()
+	texture_format.usage_bits = RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT
+	texture_format.width = noise_image.get_width()
+	texture_format.height = noise_image.get_height()
+	texture_format.texture_type = RenderingDevice.TEXTURE_TYPE_2D
+	
+	noise_tex = rd.texture_create(texture_format, RDTextureView.new(), [noise_image.get_data()])
 
 func get_mat4_bytes(mat : Projection) -> PackedFloat32Array:
 	var arr : PackedFloat32Array

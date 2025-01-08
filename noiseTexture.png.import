@@ -1,0 +1,14 @@
+[remap]
+
+importer="image"
+type="Image"
+uid="uid://m3pkoeg7617w"
+path="res://.godot/imported/noiseTexture.png-487de7e51ca0ee3833bc0868ddb9dafa.image"
+
+[deps]
+
+source_file="res://noiseTexture.png"
+dest_files=["res://.godot/imported/noiseTexture.png-487de7e51ca0ee3833bc0868ddb9dafa.image"]
+
+[params]
+
